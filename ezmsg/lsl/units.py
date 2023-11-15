@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import time
 from typing import AsyncGenerator
 
@@ -132,7 +132,8 @@ class LSLInletUnit(ez.Unit):
         self._fetch_buffer: np.ndarray | None = None
 
     def shutdown(self) -> None:
-        self.STATE.inlet.close_stream()
+        if self.STATE.inlet is not None:
+            self.STATE.inlet.close_stream()
         self.STATE.inlet = None
 
     def _update_clock_offset(self) -> None:
@@ -159,11 +160,12 @@ class LSLInletUnit(ez.Unit):
                     n_buff = int(self.SETTINGS.local_buffer_dur * inlet_info.nominal_srate()) or 1000
                     self._fetch_buffer = np.zeros((n_buff, n_ch), dtype=dtype)
                 # Pre-allocate a message template.
+                fs = inlet_info.nominal_srate()
                 self.STATE.msg_template = AxisArray(
                     data=np.empty((0, n_ch)),
                     dims=["time", "ch"],
                     axes={
-                        "time": AxisArray.Axis.TimeAxis(fs=inlet_info.nominal_srate()),
+                        "time": AxisArray.Axis.TimeAxis(fs=fs if fs else 1.0),  # HACK: Use 1.0 for irregular rate.
                     }
                 )
                 self.STATE.inlet.open_stream()
@@ -179,6 +181,7 @@ class LSLInletUnit(ez.Unit):
                 )
             else:
                 samples, timestamps = self.STATE.inlet.pull_chunk()
+                samples = np.array(samples)
             t_now = time.time()
             if (t_now - last_sync_update) >= 1.0:
                 self._update_clock_offset()
