@@ -1,6 +1,18 @@
-[build-system]
-requires = [
-	"setuptools>=42",
-	"wheel"
+[tool.poetry]
+name = "ezmsg-lsl"
+version = "0.1.0"
+description = "LabStreamingLayer source and sink for ezmsg"
+authors = ["Chadwick Boulay <chad@cbneurotech.com>"]
+readme = "README.md"
+packages = [
+  { include = "ezmsg", from = "src" }
 ]
-build-backend = "setuptools.build_meta"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.13"
+pylsl = "^1.16.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
