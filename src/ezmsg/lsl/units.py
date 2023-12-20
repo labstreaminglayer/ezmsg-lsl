@@ -193,7 +193,7 @@ class LSLInletUnit(ez.Unit):
                     t0 = timestamps[0] + self.STATE.clock_offset
                 if fs <= 0.0:
                     # Irregular rate streams need to be streamed sample-by-sample
-                    for ts, samp in zip(timestamps, samples):
+                    for ts, samp in zip(timestamps, view):
                         self.STATE.msg_template.axes["time"].offset = t0 + (ts - timestamps[0])
                         yield self.OUTPUT_SIGNAL, replace(self.STATE.msg_template, data=samp[None, ...])
                 else:
