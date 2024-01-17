@@ -198,19 +198,19 @@ class LSLInletUnit(ez.Unit):
                 self._update_clock_offset()
                 last_sync_update = t_now
             if len(timestamps):
-                view = self._fetch_buffer[:len(timestamps)] if samples is None else samples
+                data = self._fetch_buffer[:len(timestamps)].copy() if samples is None else samples
                 if self.SETTINGS.use_arrival_time:
                     t0 = t_now - (timestamps[-1] - timestamps[0])
                 else:
                     t0 = timestamps[0] + self.STATE.clock_offset
                 if fs <= 0.0:
                     # Irregular rate streams need to be streamed sample-by-sample
-                    for ts, samp in zip(timestamps, view):
+                    for ts, samp in zip(timestamps, data):
                         self.STATE.msg_template.axes["time"].offset = t0 + (ts - timestamps[0])
                         yield self.OUTPUT_SIGNAL, replace(self.STATE.msg_template, data=samp[None, ...])
                 else:
                     # Regular-rate streams can go in a chunk
                     self.STATE.msg_template.axes["time"].offset = t0
-                    yield self.OUTPUT_SIGNAL, replace(self.STATE.msg_template, data=view)
+                    yield self.OUTPUT_SIGNAL, replace(self.STATE.msg_template, data=data)
             else:
                 await asyncio.sleep(0.001)
