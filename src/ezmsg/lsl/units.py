@@ -94,7 +94,14 @@ class LSLInletSettings(ez.Settings):
     stream_name: str = None
     stream_type: str = None
     local_buffer_dur: float = 1.0
+    # Whether to ignore the LSL timestamps and use the time.time of the pull (True).
+    # If False (default), the LSL timestamps are used, but (optionally) corrected to time.time. See `use_lsl_clock`.
     use_arrival_time: bool = False
+    # Whether the AxisArray.Axis.offset should use LSL's clock (True) or time.time's clock (False -- default).
+    # This setting is ignored if `use_arrival_time` is True.
+    # Setting `use_arrival_time=False, use_lsl_clock=True` is the only way to accommodate playback rate != 1.0 and keep
+    # the axis .offset consistent with the original samplerate.
+    use_lsl_clock: bool = False
 
 
 class LSLInletState(ez.State):
@@ -137,8 +144,12 @@ class LSLInletUnit(ez.Unit):
         self.STATE.inlet = None
 
     def _update_clock_offset(self) -> None:
-        pair = (time.time(), pylsl.local_clock())
-        new_offset = pair[0] - pair[1]
+        if self.SETTINGS.use_lsl_clock:
+            new_offset = 0.0
+        else:
+            pair = (time.time(), pylsl.local_clock())
+            new_offset = pair[0] - pair[1]
+            # TODO: Exponential decay smoothing
         self.STATE.clock_offset = new_offset
 
     @ez.publisher(OUTPUT_SIGNAL)
@@ -183,8 +194,9 @@ class LSLInletUnit(ez.Unit):
                 samples, timestamps = self.STATE.inlet.pull_chunk()
                 samples = np.array(samples)
             t_now = time.time()
-            if (t_now - last_sync_update) >= 1.0:
+            if not self.SETTINGS.use_arrival_time and (t_now - last_sync_update) >= 1.0:
                 self._update_clock_offset()
+                last_sync_update = t_now
             if len(timestamps):
                 view = self._fetch_buffer[:len(timestamps)] if samples is None else samples
                 if self.SETTINGS.use_arrival_time:
