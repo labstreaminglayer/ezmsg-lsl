@@ -135,6 +135,8 @@ class LSLInletUnit(ez.Unit):
             if len(pred):
                 pred += " and "
             pred += f"type='{self.SETTINGS.stream_type}'"
+        if not len(pred):
+            pred = None
         self.STATE.resolver = pylsl.ContinuousResolver(pred=pred)
         self._fetch_buffer: np.ndarray | None = None
 
