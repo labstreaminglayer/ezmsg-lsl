@@ -10,25 +10,18 @@ import ezmsg.core as ez
 from ezmsg.util.messages.axisarray import AxisArray
 
 
+@dataclass
 class CustomAxis(AxisArray.Axis):
-    labels: typing.List[str] = []
+    labels: typing.List[str] = field(default_factory=lambda: [])
 
     @classmethod
     def SpaceAxis(cls, labels: typing.List[str]):  # , locs: typing.Optional[npt.NDArray] = None):
-        obj = cls(unit="mm")
-        obj.labels = labels
-        return obj
+        return cls(unit="mm", labels=labels)
 
 
 # Monkey-patch AxisArray with our customized Axis
 AxisArray.Axis = CustomAxis
 
-
-class CustomAxisArray(AxisArray):
-    axes: typing.Dict[str, "CustomAxis"] = field(default_factory=dict)
-
-
-AxisArray = CustomAxisArray
 
 # Reproduce pylsl.string2fmt but add float64 for more familiar numpy usage
 string2fmt = {
