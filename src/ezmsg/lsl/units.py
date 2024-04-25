@@ -1,7 +1,7 @@
 import asyncio
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 import time
-from typing import AsyncGenerator
+import typing
 
 import numpy as np
 import pylsl
@@ -9,6 +9,26 @@ import pylsl
 import ezmsg.core as ez
 from ezmsg.util.messages.axisarray import AxisArray
 
+
+class CustomAxis(AxisArray.Axis):
+    labels: typing.List[str] = []
+
+    @classmethod
+    def SpaceAxis(cls, labels: typing.List[str]):  # , locs: typing.Optional[npt.NDArray] = None):
+        obj = cls(unit="mm")
+        obj.labels = labels
+        return obj
+
+
+# Monkey-patch AxisArray with our customized Axis
+AxisArray.Axis = CustomAxis
+
+
+class CustomAxisArray(AxisArray):
+    axes: typing.Dict[str, "CustomAxis"] = field(default_factory=dict)
+
+
+AxisArray = CustomAxisArray
 
 # Reproduce pylsl.string2fmt but add float64 for more familiar numpy usage
 string2fmt = {
@@ -155,7 +175,7 @@ class LSLInletUnit(ez.Unit):
         self.STATE.clock_offset = new_offset
 
     @ez.publisher(OUTPUT_SIGNAL)
-    async def lsl_pull(self) -> AsyncGenerator:
+    async def lsl_pull(self) -> typing.AsyncGenerator:
         while self.STATE.inlet is None:
             results: list[pylsl.StreamInfo] = self.STATE.resolver.results()
             if len(results):
@@ -172,6 +192,15 @@ class LSLInletUnit(ez.Unit):
                     dtype = fmt2npdtype[fmt]
                     n_buff = int(self.SETTINGS.local_buffer_dur * inlet_info.nominal_srate()) or 1000
                     self._fetch_buffer = np.zeros((n_buff, n_ch), dtype=dtype)
+                ch_labels = []
+                chans = inlet_info.desc().child("channels")
+                if not chans.empty():
+                    ch = chans.first_child()
+                    while not ch.empty():
+                        ch_labels.append(ch.child_value("label"))
+                        ch = ch.next_sibling()
+                while len(ch_labels) < n_ch:
+                    ch_labels.append(str(len(ch_labels) + 1))
                 # Pre-allocate a message template.
                 fs = inlet_info.nominal_srate()
                 self.STATE.msg_template = AxisArray(
@@ -179,6 +208,7 @@ class LSLInletUnit(ez.Unit):
                     dims=["time", "ch"],
                     axes={
                         "time": AxisArray.Axis.TimeAxis(fs=fs if fs else 1.0),  # HACK: Use 1.0 for irregular rate.
+                        "ch": AxisArray.Axis.SpaceAxis(labels=ch_labels)
                     }
                 )
                 self.STATE.inlet.open_stream()
