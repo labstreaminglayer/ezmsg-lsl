@@ -103,9 +103,17 @@ class LSLOutletUnit(ez.Unit):
             self.STATE.outlet.push_chunk(dat.reshape(dat.shape[0], -1))
 
 
+@dataclass
+class LSLInfo:
+    name: str = ""
+    type: str = ""
+    channel_count: typing.Optional[int] = None
+    nominal_srate: float = 0.0
+    channel_format: typing.Optional[str] = None
+
+
 class LSLInletSettings(ez.Settings):
-    stream_name: str = None
-    stream_type: str = None
+    info: LSLInfo = LSLInfo()
     local_buffer_dur: float = 1.0
     # Whether to ignore the LSL timestamps and use the time.time of the pull (True).
     # If False (default), the LSL timestamps are used, but (optionally) corrected to time.time. See `use_lsl_clock`.
@@ -139,18 +147,35 @@ class LSLInletUnit(ez.Unit):
     STATE: LSLInletState
 
     def initialize(self) -> None:
-        # Build the predicate string. This uses XPATH syntax and can filter on anything in the stream info. e.g.,
-        # `"name='BioSemi'" or "type='EEG' and starts-with(name,'BioSemi') and count(info/desc/channel)=32"`
-        pred = ""
-        if self.SETTINGS.stream_name:
-            pred += f"name='{self.SETTINGS.stream_name}'"
-        if self.SETTINGS.stream_type:
-            if len(pred):
-                pred += " and "
-            pred += f"type='{self.SETTINGS.stream_type}'"
-        if not len(pred):
-            pred = None
-        self.STATE.resolver = pylsl.ContinuousResolver(pred=pred)
+        # TODO: If name, type, and host are all provided, then create the StreamInfo directly and
+        #  create the inlet directly from that info.
+        # else:
+        if all([_ is not None for _ in [
+            self.SETTINGS.info.name,
+            self.SETTINGS.info.type,
+            self.SETTINGS.info.channel_count,
+            self.SETTINGS.info.channel_format
+        ]]):
+            info = pylsl.StreamInfo(
+                name=self.SETTINGS.info.name,
+                type=self.SETTINGS.info.type,
+                channel_count=self.SETTINGS.info.channel_count,
+                channel_format=self.SETTINGS.info.channel_format
+            )
+            self.STATE.inlet = pylsl.StreamInlet(info, max_chunklen=1, processing_flags=pylsl.proc_ALL)
+        else:
+            # Build the predicate string. This uses XPATH syntax and can filter on anything in the stream info. e.g.,
+            # `"name='BioSemi'" or "type='EEG' and starts-with(name,'BioSemi') and count(info/desc/channel)=32"`
+            pred = ""
+            if self.SETTINGS.info.name:
+                pred += f"name='{self.SETTINGS.info.name}'"
+            if self.SETTINGS.info.type:
+                if len(pred):
+                    pred += " and "
+                pred += f"type='{self.SETTINGS.info.type}'"
+            if not len(pred):
+                pred = None
+            self.STATE.resolver = pylsl.ContinuousResolver(pred=pred)
         self._fetch_buffer: np.ndarray | None = None
 
     def shutdown(self) -> None:
@@ -177,36 +202,37 @@ class LSLInletUnit(ez.Unit):
                     max_chunklen=1,
                     processing_flags=pylsl.proc_ALL
                 )
-                inlet_info = self.STATE.inlet.info()
-                # If possible, create a destination buffer for faster pulls
-                fmt = inlet_info.channel_format()
-                n_ch = inlet_info.channel_count()
-                if fmt in fmt2npdtype:
-                    dtype = fmt2npdtype[fmt]
-                    n_buff = int(self.SETTINGS.local_buffer_dur * inlet_info.nominal_srate()) or 1000
-                    self._fetch_buffer = np.zeros((n_buff, n_ch), dtype=dtype)
-                ch_labels = []
-                chans = inlet_info.desc().child("channels")
-                if not chans.empty():
-                    ch = chans.first_child()
-                    while not ch.empty():
-                        ch_labels.append(ch.child_value("label"))
-                        ch = ch.next_sibling()
-                while len(ch_labels) < n_ch:
-                    ch_labels.append(str(len(ch_labels) + 1))
-                # Pre-allocate a message template.
-                fs = inlet_info.nominal_srate()
-                self.STATE.msg_template = AxisArray(
-                    data=np.empty((0, n_ch)),
-                    dims=["time", "ch"],
-                    axes={
-                        "time": AxisArray.Axis.TimeAxis(fs=fs if fs else 1.0),  # HACK: Use 1.0 for irregular rate.
-                        "ch": AxisArray.Axis.SpaceAxis(labels=ch_labels)
-                    }
-                )
-                self.STATE.inlet.open_stream()
             else:
                 await asyncio.sleep(0.5)
+
+        self.STATE.inlet.open_stream()
+        inlet_info = self.STATE.inlet.info()
+        # If possible, create a destination buffer for faster pulls
+        fmt = inlet_info.channel_format()
+        n_ch = inlet_info.channel_count()
+        if fmt in fmt2npdtype:
+            dtype = fmt2npdtype[fmt]
+            n_buff = int(self.SETTINGS.local_buffer_dur * inlet_info.nominal_srate()) or 1000
+            self._fetch_buffer = np.zeros((n_buff, n_ch), dtype=dtype)
+        ch_labels = []
+        chans = inlet_info.desc().child("channels")
+        if not chans.empty():
+            ch = chans.first_child()
+            while not ch.empty():
+                ch_labels.append(ch.child_value("label"))
+                ch = ch.next_sibling()
+        while len(ch_labels) < n_ch:
+            ch_labels.append(str(len(ch_labels) + 1))
+        # Pre-allocate a message template.
+        fs = inlet_info.nominal_srate()
+        msg_template = AxisArray(
+            data=np.empty((0, n_ch)),
+            dims=["time", "ch"],
+            axes={
+                "time": AxisArray.Axis.TimeAxis(fs=fs if fs else 1.0),  # HACK: Use 1.0 for irregular rate.
+                "ch": AxisArray.Axis.SpaceAxis(labels=ch_labels)
+            }
+        )
 
         last_sync_update = time.time() - 1.0
         while self.STATE.inlet is not None:
@@ -231,11 +257,11 @@ class LSLInletUnit(ez.Unit):
                 if fs <= 0.0:
                     # Irregular rate streams need to be streamed sample-by-sample
                     for ts, samp in zip(timestamps, data):
-                        self.STATE.msg_template.axes["time"].offset = t0 + (ts - timestamps[0])
-                        yield self.OUTPUT_SIGNAL, replace(self.STATE.msg_template, data=samp[None, ...])
+                        msg_template.axes["time"].offset = t0 + (ts - timestamps[0])
+                        yield self.OUTPUT_SIGNAL, replace(msg_template, data=samp[None, ...])
                 else:
                     # Regular-rate streams can go in a chunk
-                    self.STATE.msg_template.axes["time"].offset = t0
-                    yield self.OUTPUT_SIGNAL, replace(self.STATE.msg_template, data=data)
+                    msg_template.axes["time"].offset = t0
+                    yield self.OUTPUT_SIGNAL, replace(msg_template, data=data)
             else:
                 await asyncio.sleep(0.001)
