@@ -1,5 +1,5 @@
 import asyncio
-from dataclasses import dataclass, replace, field
+from dataclasses import dataclass, replace, field, fields
 import time
 import typing
 
@@ -47,13 +47,13 @@ fmt2npdtype = {
 
 
 class LSLOutletSettings(ez.Settings):
-    stream_name: str | None = None
-    stream_type: str | None = None
-    map_file: str | None = None  # Path to file containing a list of channel names and locations.
+    stream_name: typing.Optional[str] = None
+    stream_type: typing.Optional[str] = None
+    map_file: typing.Optional[str] = None  # Path to file containing a list of channel names and locations.
 
 
 class LSLOutletState(ez.State):
-    outlet: pylsl.StreamOutlet | None = None
+    outlet: typing.Optional[pylsl.StreamOutlet] = None
 
 
 class LSLOutletUnit(ez.Unit):
@@ -126,8 +126,8 @@ class LSLInletSettings(ez.Settings):
 
 
 class LSLInletState(ez.State):
-    resolver: pylsl.ContinuousResolver | None = None
-    inlet: pylsl.StreamInlet | None = None
+    resolver: typing.Optional[pylsl.ContinuousResolver] = None
+    inlet: typing.Optional[pylsl.StreamInlet] = None
     clock_offset: float = 0.0
 
 
@@ -140,11 +140,33 @@ class LSLInletUnit(ez.Unit):
         stream_name: The `name` of the created LSL outlet.
         stream_type: The `type` of the created LSL outlet.
     """
+    SETTINGS: LSLInletSettings
+    STATE: LSLInletState
 
     OUTPUT_SIGNAL = ez.OutputStream(AxisArray)
 
-    SETTINGS: LSLInletSettings
-    STATE: LSLInletState
+    def __init__(self, *args, **kwargs) -> None:
+        """
+        Handle deprecated arguments. Whereas previously stream_name and stream_type were in the
+        LSLInletSettings, now LSLInletSettings has info: LSLInfo which has fields for name, type,
+        among others.
+        """
+        replace = set()
+        for k, v in kwargs.items():
+            if k.startswith("stream_"):
+                replace.add(k)
+        if len(replace) > 0:
+            ez.logger.warning(f"LSLInlet kwargs beginning with 'stream_' deprecated. Found {replace}. "
+                              f"See LSLInfo dataclass.")
+            for k in replace:
+                kwargs[k[7:]] = kwargs.pop(k)
+
+        known_fields = [_.name for _ in fields(LSLInfo)]
+        info_kwargs = {k: v for k, v in kwargs.items() if k in known_fields}
+        for k in info_kwargs.keys():
+            kwargs.pop(k)
+        info = LSLInfo(**info_kwargs)
+        super().__init__(*args, info=info, **kwargs)
 
     def initialize(self) -> None:
         # TODO: If name, type, and host are all provided, then create the StreamInfo directly and
