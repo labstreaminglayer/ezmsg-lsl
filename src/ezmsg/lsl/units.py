@@ -151,22 +151,23 @@ class LSLInletUnit(ez.Unit):
         LSLInletSettings, now LSLInletSettings has info: LSLInfo which has fields for name, type,
         among others.
         """
-        replace = set()
-        for k, v in kwargs.items():
-            if k.startswith("stream_"):
-                replace.add(k)
-        if len(replace) > 0:
-            ez.logger.warning(f"LSLInlet kwargs beginning with 'stream_' deprecated. Found {replace}. "
-                              f"See LSLInfo dataclass.")
-            for k in replace:
-                kwargs[k[7:]] = kwargs.pop(k)
+        if "info" not in kwargs:
+            replace = set()
+            for k, v in kwargs.items():
+                if k.startswith("stream_"):
+                    replace.add(k)
+            if len(replace) > 0:
+                ez.logger.warning(f"LSLInlet kwargs beginning with 'stream_' deprecated. Found {replace}. "
+                                  f"See LSLInfo dataclass.")
+                for k in replace:
+                    kwargs[k[7:]] = kwargs.pop(k)
 
-        known_fields = [_.name for _ in fields(LSLInfo)]
-        info_kwargs = {k: v for k, v in kwargs.items() if k in known_fields}
-        for k in info_kwargs.keys():
-            kwargs.pop(k)
-        info = LSLInfo(**info_kwargs)
-        super().__init__(*args, info=info, **kwargs)
+            known_fields = [_.name for _ in fields(LSLInfo)]
+            info_kwargs = {k: v for k, v in kwargs.items() if k in known_fields}
+            for k in info_kwargs.keys():
+                kwargs.pop(k)
+            kwargs["info"] = LSLInfo(**info_kwargs)
+        super().__init__(*args, **kwargs)
 
     def initialize(self) -> None:
         # TODO: If name, type, and host are all provided, then create the StreamInfo directly and
