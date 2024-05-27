@@ -113,7 +113,7 @@ class LSLInfo:
 
 
 class LSLInletSettings(ez.Settings):
-    info: LSLInfo = LSLInfo()
+    info: LSLInfo = field(default_factory=LSLInfo)
     local_buffer_dur: float = 1.0
     # Whether to ignore the LSL timestamps and use the time.time of the pull (True).
     # If False (default), the LSL timestamps are used, but (optionally) corrected to time.time. See `use_lsl_clock`.
