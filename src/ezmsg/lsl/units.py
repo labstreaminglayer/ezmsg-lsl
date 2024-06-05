@@ -107,6 +107,7 @@ class LSLOutletUnit(ez.Unit):
 class LSLInfo:
     name: str = ""
     type: str = ""
+    host: str = ""
     channel_count: typing.Optional[int] = None
     nominal_srate: float = 0.0
     channel_format: typing.Optional[str] = None
@@ -196,6 +197,10 @@ class LSLInletUnit(ez.Unit):
                 if len(pred):
                     pred += " and "
                 pred += f"type='{self.SETTINGS.info.type}'"
+            if self.SETTINGS.info.host:
+                if len(pred):
+                    pred += " and "
+                pred += f"hostname='{self.SETTINGS.info.host}'"
             if not len(pred):
                 pred = None
             self.STATE.resolver = pylsl.ContinuousResolver(pred=pred)
