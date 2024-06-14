@@ -15,9 +15,11 @@ numpy = "^1.26.4"
 ezmsg = {git = "https://github.com/iscoe/ezmsg.git", branch = "dev"}
 
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.2.1"
-ezmsg-sigproc = { git = "https://github.com/iscoe/ezmsg.git", branch = "dev", subdirectory = "extensions/ezmsg-sigproc" }
+[tool.poetry.group.test.dependencies]
+ezmsg-sigproc = { git = "https://github.com/ezmsg-org/ezmsg-sigproc.git", branch = "dev" }
+pytest = "^7.0.0"
+pytest-cov = "*"
+flake8 = "*"
 
 
 [build-system]
