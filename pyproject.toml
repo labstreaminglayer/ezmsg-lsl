@@ -12,7 +12,7 @@ packages = [
 python = ">=3.9,<3.13"
 pylsl = "^1.16.2"
 numpy = "^1.26.4"
-ezmsg = {git = "https://github.com/iscoe/ezmsg.git", branch = "dev"}
+ezmsg = "^3.3.0"
 
 
 [tool.poetry.group.test.dependencies]
